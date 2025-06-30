@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>動的OTP QRコードシステム</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 20px;
+        }
+        
+        .panel {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        h2 {
+            color: #555;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 10px;
+        }
+        
+        .qr-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        #qrcode {
+            padding: 20px;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+        }
+        
+        .info-box {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .timer {
+            font-size: 48px;
+            font-weight: bold;
+            color: #2196F3;
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 10px;
+            background: #e0e0e0;
+            border-radius: 5px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #2196F3;
+            transition: width 1s linear;
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 16px;
+            margin: 10px 0;
+            box-sizing: border-box;
+        }
+        
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #2196F3;
+        }
+        
+        button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s;
+            width: 100%;
+            margin: 10px 0;
+        }
+        
+        button:hover {
+            background: #1976D2;
+        }
+        
+        button:active {
+            transform: scale(0.98);
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        
+        .status.success {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .status.error {
+            background: #f44336;
+            color: white;
+        }
+        
+        .status.waiting {
+            background: #FF9800;
+            color: white;
+        }
+        
+        .secret-display {
+            word-break: break-all;
+            background: #fff3cd;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>🔐 動的OTP QRコードシステム</h1>
+    
+    <div class="container">
+        <!-- QRコード生成側 -->
+        <div class="panel">
+            <h2>📱 QRコード生成</h2>
+            
+            <div class="qr-container">
+                <div id="qrcode"></div>
+                
+                <div class="timer" id="timer">30</div>
+                
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress"></div>
+                </div>
+                
+                <div class="info-box">
+                    <strong>現在のOTP:</strong>
+                    <div id="currentOTP">------</div>
+                </div>
+                
+                <div class="info-box">
+                    <strong>ユーザーID:</strong>
+                    <div id="userId">user123</div>
+                </div>
+                
+                <div class="secret-display">
+                    <strong>シークレットキー:</strong>
+                    <div id="secretKey">JBSWY3DPEHPK3PXP</div>
+                </div>
+                
+                <button onclick="generateNewSecret()">新しいシークレットを生成</button>
+                
+                <div class="info-box" style="background: #f0f7ff; margin-top: 20px;">
+                    <strong>⏱️ OTP更新間隔:</strong>
+                    <select id="otpPeriod" onchange="changePeriod()" style="width: 100%; padding: 8px; margin-top: 5px;">
+                        <option value="30">30秒（標準）</option>
+                        <option value="60">60秒</option>
+                        <option value="90">90秒</option>
+                        <option value="120">120秒</option>
+                        <option value="300">5分</option>
+                    </select>
+                    <small>更新間隔を長くするとセキュリティは低下しますが、利便性は向上します</small>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 検証側 -->
+        <div class="panel">
+            <h2>✅ OTP検証</h2>
+            
+            <div>
+                <label for="verifyUserId">ユーザーID:</label>
+                <input type="text" id="verifyUserId" placeholder="例: user123" value="user123">
+                
+                <label for="verifyOTP">OTPコード:</label>
+                <input type="text" id="verifyOTP" placeholder="6桁のOTPを入力" maxlength="6">
+                
+                <button onclick="verifyOTP()">検証</button>
+                
+                <div id="verificationResult"></div>
+                
+                <h3>📋 検証履歴</h3>
+                <div id="verificationHistory"></div>
+                
+                <h3>🔧 デバッグ情報</h3>
+                <div class="info-box">
+                    <strong>サーバー時刻:</strong>
+                    <div id="serverTime">-</div>
+                </div>
+                <div class="info-box">
+                    <strong>検証用シークレット:</strong>
+                    <input type="text" id="verifySecret" value="JBSWY3DPEHPK3PXP" style="width: 100%;">
+                </div>
+                <div class="info-box" style="background: #e3f2fd;">
+                    <strong>検証ウィンドウ:</strong> <span id="verifyWindowInfo">±60秒（前後2ステップ）</span><br>
+                    <small>時刻のずれやネットワーク遅延を考慮して、過去・未来のOTPも有効として扱います</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // TOTP実装
+        class TOTP {
+            constructor(secret, period = 30) {
+                this.secret = secret;
+                this.period = period;
+            }
+            
+            // Base32デコード
+            base32Decode(input) {
+                const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+                let bits = '';
+                let hex = '';
+                
+                for (let i = 0; i < input.length; i++) {
+                    const val = alphabet.indexOf(input.charAt(i).toUpperCase());
+                    if (val === -1) continue;
+                    bits += val.toString(2).padStart(5, '0');
+                }
+                
+                for (let i = 0; i + 8 <= bits.length; i += 8) {
+                    const chunk = bits.substr(i, 8);
+                    hex += parseInt(chunk, 2).toString(16).padStart(2, '0');
+                }
+                
+                return hex;
+            }
+            
+            // HMAC-SHA1
+            hmacSHA1(key, message) {
+                const keyHex = CryptoJS.enc.Hex.parse(key);
+                const messageHex = CryptoJS.enc.Hex.parse(message);
+                const hmac = CryptoJS.HmacSHA1(messageHex, keyHex);
+                return hmac.toString(CryptoJS.enc.Hex);
+            }
+            
+            // OTP生成
+            generate(timestamp = null) {
+                if (!timestamp) {
+                    timestamp = Math.floor(Date.now() / 1000);
+                }
+                
+                const counter = Math.floor(timestamp / this.period);
+                const counterHex = counter.toString(16).padStart(16, '0');
+                
+                const secretHex = this.base32Decode(this.secret);
+                const hmac = this.hmacSHA1(secretHex, counterHex);
+                
+                const offset = parseInt(hmac.substr(-1), 16);
+                const binary = parseInt(hmac.substr(offset * 2, 8), 16) & 0x7fffffff;
+                const otp = binary % 1000000;
+                
+                return otp.toString().padStart(6, '0');
+            }
+            
+            // 残り時間を取得
+            getRemainingTime() {
+                const timestamp = Math.floor(Date.now() / 1000);
+                return this.period - (timestamp % this.period);
+            }
+        }
+        
+        // グローバル変数
+        let qr = null;
+        let totp = null;
+        let updateInterval = null;
+        let currentSecret = 'JBSWY3DPEHPK3PXP';
+        let currentUserId = 'user123';
+        let verificationHistory = [];
+        let currentOTP = '';
+        let currentPeriod = 30;
+        
+        // 初期化
+        function init() {
+            totp = new TOTP(currentSecret, currentPeriod);
+            startOTPGeneration();
+        }
+        
+        // OTP生成開始
+        function startOTPGeneration() {
+            if (updateInterval) {
+                clearInterval(updateInterval);
+            }
+            
+            updateDisplay();
+            updateInterval = setInterval(updateDisplay, 1000);
+        }
+        
+        // 期間変更
+        function changePeriod() {
+            const periodSelect = document.getElementById('otpPeriod');
+            currentPeriod = parseInt(periodSelect.value);
+            
+            // TOTPインスタンスを再作成
+            totp = new TOTP(currentSecret, currentPeriod);
+            currentOTP = ''; // 強制的に更新
+            
+            // 表示を更新
+            updateDisplay();
+            
+            // 検証ウィンドウの表示を更新
+            const windowSize = 2;
+            document.getElementById('verifyWindowInfo').textContent = 
+                `±${windowSize * currentPeriod}秒（前後${windowSize}ステップ）`;
+            
+            // 検証側にも通知
+            showVerificationResult('waiting', `OTP更新間隔が${currentPeriod}秒に変更されました`);
+        }
+        
+        // 表示更新（1秒ごと）
+        function updateDisplay() {
+            const otp = totp.generate();
+            const remainingTime = totp.getRemainingTime();
+            
+            // タイマー更新
+            document.getElementById('timer').textContent = remainingTime;
+            
+            // プログレスバー更新
+            const progress = ((currentPeriod - remainingTime) / currentPeriod) * 100;
+            document.getElementById('progress').style.width = progress + '%';
+            
+            // OTPが変わった場合のみQRコードを更新
+            if (otp !== currentOTP) {
+                currentOTP = otp;
+                updateQRCode(otp);
+            }
+            
+            // サーバー時刻更新
+            updateServerTime();
+        }
+        
+        // QRコード更新（OTPが変わったときのみ）
+        function updateQRCode(otp) {
+            // OTP表示更新
+            document.getElementById('currentOTP').textContent = otp;
+            
+            // QRコードデータ
+            const qrData = JSON.stringify({
+                userId: currentUserId,
+                otp: otp,
+                timestamp: Math.floor(Date.now() / 1000),
+                expires: currentPeriod,
+                period: currentPeriod
+            });
+            
+            // QRコード生成または更新
+            if (!qr) {
+                qr = new QRCode(document.getElementById('qrcode'), {
+                    text: qrData,
+                    width: 256,
+                    height: 256,
+                    colorDark: '#000000',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.H
+                });
+            } else {
+                qr.clear();
+                qr.makeCode(qrData);
+            }
+        }
+        
+        // 新しいシークレット生成
+        function generateNewSecret() {
+            const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+            let secret = '';
+            for (let i = 0; i < 16; i++) {
+                secret += alphabet[Math.floor(Math.random() * alphabet.length)];
+            }
+            
+            currentSecret = secret;
+            document.getElementById('secretKey').textContent = secret;
+            document.getElementById('verifySecret').value = secret;
+            
+            totp = new TOTP(currentSecret, currentPeriod);
+            currentOTP = ''; // OTPをリセットして強制的に更新
+            updateDisplay();
+        }
+        
+        // OTP検証（検証ウィンドウ付き）
+        function verifyOTP() {
+            const userId = document.getElementById('verifyUserId').value;
+            const inputOTP = document.getElementById('verifyOTP').value;
+            const verifySecret = document.getElementById('verifySecret').value;
+            
+            if (!userId || !inputOTP || inputOTP.length !== 6) {
+                showVerificationResult('error', 'ユーザーIDと6桁のOTPを入力してください');
+                return;
+            }
+            
+            // 検証用TOTPインスタンス
+            const verifyTOTP = new TOTP(verifySecret);
+            const currentTime = Math.floor(Date.now() / 1000);
+            
+            // 検証ウィンドウの設定（前後何ステップまで許可するか）
+            const windowSize = 2; // 前後2ステップ = ±60秒
+            let isValid = false;
+            let message = '';
+            let matchedWindow = null;
+            
+            // 現在時刻を中心に前後のOTPを検証
+            for (let i = -windowSize; i <= windowSize; i++) {
+                const checkTime = currentTime + (i * 30);
+                const checkOTP = verifyTOTP.generate(checkTime);
+                
+                if (inputOTP === checkOTP) {
+                    isValid = true;
+                    matchedWindow = i;
+                    break;
+                }
+            }
+            
+            if (isValid) {
+                if (matchedWindow === 0) {
+                    message = '✅ OTPが正しく検証されました（現在のOTP）';
+                } else if (matchedWindow < 0) {
+                    message = `✅ OTPが正しく検証されました（${Math.abs(matchedWindow * 30)}秒前のOTP）`;
+                } else {
+                    message = `✅ OTPが正しく検証されました（${matchedWindow * 30}秒後のOTP - 時刻が進んでいる可能性）`;
+                }
+            } else {
+                message = '❌ OTPが無効です（検証ウィンドウ: ±60秒）';
+            }
+            
+            showVerificationResult(isValid ? 'success' : 'error', message);
+            
+            // 現在のOTPとデバッグ情報
+            const currentOTP = verifyTOTP.generate();
+            const debugInfo = [];
+            for (let i = -windowSize; i <= windowSize; i++) {
+                const checkTime = currentTime + (i * verifyPeriod);
+                const checkOTP = verifyTOTP.generate(checkTime);
+                const label = i === 0 ? '現在' : i < 0 ? `${Math.abs(i * verifyPeriod)}秒前` : `${i * verifyPeriod}秒後`;
+                debugInfo.push(`${label}: ${checkOTP}`);
+            }
+            
+            // 履歴に追加
+            addVerificationHistory({
+                userId: userId,
+                otp: inputOTP,
+                valid: isValid,
+                timestamp: new Date().toLocaleString('ja-JP'),
+                expectedOTP: currentOTP,
+                window: matchedWindow,
+                debugInfo: debugInfo
+            });
+            
+            // 入力フィールドをクリア
+            if (isValid) {
+                document.getElementById('verifyOTP').value = '';
+            }
+        }
+        
+        // 検証結果表示
+        function showVerificationResult(status, message) {
+            const resultDiv = document.getElementById('verificationResult');
+            resultDiv.className = `status ${status}`;
+            resultDiv.textContent = message;
+            
+            setTimeout(() => {
+                resultDiv.className = '';
+                resultDiv.textContent = '';
+            }, 5000);
+        }
+        
+        // 検証履歴追加
+        function addVerificationHistory(record) {
+            verificationHistory.unshift(record);
+            if (verificationHistory.length > 5) {
+                verificationHistory.pop();
+            }
+            
+            const historyDiv = document.getElementById('verificationHistory');
+            historyDiv.innerHTML = verificationHistory.map(r => {
+                let windowInfo = '';
+                if (r.window !== undefined && r.window !== null) {
+                    const period = currentPeriod;
+                    if (r.window === 0) {
+                        windowInfo = '（現在のOTP）';
+                    } else if (r.window < 0) {
+                        windowInfo = `（${Math.abs(r.window * period)}秒前）`;
+                    } else {
+                        windowInfo = `（${r.window * period}秒後）`;
+                    }
+                }
+                
+                let debugSection = '';
+                if (r.debugInfo) {
+                    debugSection = `
+                        <details style="margin-top: 5px;">
+                            <summary style="cursor: pointer; font-size: 12px;">検証ウィンドウ詳細</summary>
+                            <div style="font-size: 12px; margin-top: 5px;">
+                                ${r.debugInfo.join('<br>')}
+                            </div>
+                        </details>
+                    `;
+                }
+                
+                return `
+                    <div class="info-box" style="background: ${r.valid ? '#e8f5e9' : '#ffebee'}">
+                        <small>${r.timestamp}</small><br>
+                        ユーザー: ${r.userId}<br>
+                        入力OTP: ${r.otp}<br>
+                        現在のOTP: ${r.expectedOTP}<br>
+                        結果: ${r.valid ? '✅ 成功' : '❌ 失敗'} ${windowInfo}
+                        ${debugSection}
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // サーバー時刻更新
+        function updateServerTime() {
+            const now = new Date();
+            document.getElementById('serverTime').textContent = now.toLocaleString('ja-JP');
+        }
+        
+        // Enterキーで検証
+        document.getElementById('verifyOTP').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                verifyOTP();
+            }
+        });
+        
+        // 初期化実行
+        init();
+    </script>
+</body>
+</html>
